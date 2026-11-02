@@ -1,0 +1,21 @@
+// Prisma 7: the database URL lives in prisma.config.ts, not here.
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Phase 0 starts with one real table so migrations and the client have
+// something to work with. More tables arrive phase by phase.
+// Percentages are stored in basis points: 1000 = 10%.
+model Setting {
+  id                  Int      @id @default(1)
+  restaurantName      String
+  vatBps              Int      @default(0)
+  serviceChargeBps    Int      @default(0)
+  discountApprovalBps Int      @default(1000)
+  updatedAt           DateTime @updatedAt
+}
