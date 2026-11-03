@@ -6,6 +6,7 @@ import type { createStaffSchema, updateStaffSchema } from "@/lib/schemas/staff";
 import { db } from "@/server/db";
 import { isLocked } from "@/server/auth/lockout";
 import { hashPin } from "@/server/auth/pin";
+import { isUniqueViolation } from "@/server/db-errors";
 import { ApiError } from "@/server/errors";
 import type { AuthedStaff } from "./auth";
 import { writeAudit } from "./audit";
@@ -44,10 +45,6 @@ function assertPinAllowed(role: Role, pin: string): void {
   const problem = checkPin(role, pin);
   if (problem === "WEAK") throw new ApiError(400, "WEAK_PIN");
   if (problem) throw new ApiError(400, "INVALID_INPUT");
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "P2002";
 }
 
 async function findTarget(id: string): Promise<StaffRecord> {

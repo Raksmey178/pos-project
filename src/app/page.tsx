@@ -20,10 +20,24 @@ export default async function Home() {
       </div>
 
       <div className="flex flex-wrap items-center justify-center gap-3">
+        <Link
+          href="/menu"
+          className="flex h-14 items-center rounded-2xl bg-zinc-900 px-6 text-lg font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
+        >
+          {t("menu")}
+        </Link>
+        {hasPermission(staff.role, "menu:manage") && (
+          <Link
+            href="/admin/menu"
+            className="flex h-14 items-center rounded-2xl border border-zinc-300 px-6 text-lg font-medium dark:border-zinc-700"
+          >
+            {t("menuAdmin")}
+          </Link>
+        )}
         {hasPermission(staff.role, "staff:view") && (
           <Link
             href="/admin/staff"
-            className="flex h-14 items-center rounded-2xl bg-zinc-900 px-6 text-lg font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
+            className="flex h-14 items-center rounded-2xl border border-zinc-300 px-6 text-lg font-medium dark:border-zinc-700"
           >
             {t("staffAdmin")}
           </Link>
@@ -35,3 +49,4 @@ export default async function Home() {
     </main>
   );
 }
+

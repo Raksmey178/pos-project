@@ -75,3 +75,88 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([actorId])
 }
+
+// ---------- Phase 3: menu ----------
+// Nothing in the menu is ever deleted: it is switched off (isActive = false).
+// Old orders will keep their own copy of names and prices (Phase 5), so changing
+// the menu never changes past sales.
+
+// Where an item is prepared: Kitchen, Bar, ... Each station gets its own kitchen tickets (Phase 6).
+model Station {
+  id        String     @id @default(uuid())
+  name      String     @unique
+  sortOrder Int        @default(0)
+  isActive  Boolean    @default(true)
+  items     MenuItem[]
+}
+
+model Category {
+  id        String     @id @default(uuid())
+  nameKm    String     @unique
+  nameEn    String? // optional, for when English is added
+  sortOrder Int        @default(0)
+  isActive  Boolean    @default(true)
+  items     MenuItem[]
+}
+
+model MenuItem {
+  id             String                  @id @default(uuid())
+  categoryId     String
+  category       Category                @relation(fields: [categoryId], references: [id])
+  stationId      String
+  station        Station                 @relation(fields: [stationId], references: [id])
+  nameKm         String
+  nameEn         String?
+  priceCents     Int // USD cents: 350 = $3.50
+  isSoldOut      Boolean                 @default(false)
+  isActive       Boolean                 @default(true)
+  sortOrder      Int                     @default(0)
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+  modifierGroups MenuItemModifierGroup[]
+
+  @@unique([categoryId, nameKm])
+  @@index([categoryId])
+  @@index([stationId])
+}
+
+// A question asked when ordering: "Size?", "Sugar level?", "Extras?".
+// minSelect/maxSelect: Size = 1..1 (must pick one), Extras = 0..3 (pick up to three).
+model ModifierGroup {
+  id        String                  @id @default(uuid())
+  nameKm    String                  @unique
+  nameEn    String?
+  minSelect Int                     @default(0)
+  maxSelect Int                     @default(1)
+  sortOrder Int                     @default(0)
+  isActive  Boolean                 @default(true)
+  options   ModifierOption[]
+  items     MenuItemModifierGroup[]
+}
+
+// One answer: "Large" (+$1.00), "No sugar" ($0.00), "Extra egg" (+$0.50).
+model ModifierOption {
+  id              String        @id @default(uuid())
+  groupId         String
+  group           ModifierGroup @relation(fields: [groupId], references: [id])
+  nameKm          String
+  nameEn          String?
+  priceDeltaCents Int           @default(0) // may be negative
+  sortOrder       Int           @default(0)
+  isActive        Boolean       @default(true)
+
+  @@unique([groupId, nameKm])
+  @@index([groupId])
+}
+
+// Which questions are asked for which item.
+model MenuItemModifierGroup {
+  menuItemId      String
+  modifierGroupId String
+  sortOrder       Int           @default(0)
+  menuItem        MenuItem      @relation(fields: [menuItemId], references: [id])
+  modifierGroup   ModifierGroup @relation(fields: [modifierGroupId], references: [id])
+
+  @@id([menuItemId, modifierGroupId])
+  @@index([modifierGroupId])
+}
