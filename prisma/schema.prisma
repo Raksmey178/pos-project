@@ -19,3 +19,59 @@ model Setting {
   discountApprovalBps Int      @default(1000)
   updatedAt           DateTime @updatedAt
 }
+
+// ---------- Phase 2: staff, login sessions, audit log ----------
+
+enum Role {
+  WAITER
+  CASHIER
+  KITCHEN
+  MANAGER
+  ADMIN
+}
+
+// Staff are never deleted (the audit log points at them). They are deactivated.
+model Staff {
+  id                String     @id @default(uuid())
+  name              String     @unique
+  role              Role
+  pinHash           String // Argon2 hash. The PIN itself is never stored.
+  isActive          Boolean    @default(true)
+  failedPinAttempts Int        @default(0)
+  lockedUntil       DateTime?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  sessions          Session[]
+  auditLogs         AuditLog[]
+}
+
+// One row per login. The browser holds a random token; we store only its hash,
+// so a database leak does not hand out usable logins.
+model Session {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  staffId   String
+  staff     Staff     @relation(fields: [staffId], references: [id])
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  revokedAt DateTime?
+
+  @@index([staffId])
+}
+
+// Append-only: a database trigger blocks UPDATE, DELETE and TRUNCATE
+// (see prisma/sql/audit-log-append-only.sql).
+model AuditLog {
+  id         String   @id @default(uuid())
+  createdAt  DateTime @default(now())
+  actorId    String? // null = nobody was logged in (e.g. a failed login)
+  actor      Staff?   @relation(fields: [actorId], references: [id])
+  action     String // e.g. "auth.login", "staff.create"
+  entityType String?
+  entityId   String?
+  details    Json? // small facts only. NEVER PINs, hashes or tokens.
+
+  @@index([createdAt])
+  @@index([entityType, entityId])
+  @@index([actorId])
+}
