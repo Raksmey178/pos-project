@@ -10,6 +10,9 @@ export const ERROR_CODES = [
   "CONFLICT",
   "WEAK_PIN",
   "SAME_PIN",
+  "TABLE_OVERLAP",
+  "ZONE_NOT_EMPTY",
+  "ZONE_FULL",
   "NETWORK", // used by screens when the request itself fails
   "INTERNAL",
 ] as const;

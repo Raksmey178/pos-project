@@ -37,4 +37,15 @@ describe("role permissions", () => {
     expect(hasPermission("MANAGER", "menu:manage")).toBe(true);
     expect(hasPermission("ADMIN", "menu:manage")).toBe(true);
   });
+  
+  it("everyone can see the floor plan, only Manager and Admin can change it", () => {
+    for (const role of ["WAITER", "CASHIER", "KITCHEN", "MANAGER", "ADMIN"] as const) {
+      expect(hasPermission(role, "tables:view")).toBe(true);
+    }
+    for (const role of ["WAITER", "CASHIER", "KITCHEN"] as const) {
+      expect(hasPermission(role, "tables:manage")).toBe(false);
+    }
+    expect(hasPermission("MANAGER", "tables:manage")).toBe(true);
+    expect(hasPermission("ADMIN", "tables:manage")).toBe(true);
+  });
 });

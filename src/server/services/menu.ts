@@ -13,10 +13,9 @@ import type {
   updateStationSchema,
 } from "@/lib/schemas/menu";
 import { db } from "@/server/db";
-import { isUniqueViolation } from "@/server/db-errors";
-import { ApiError } from "@/server/errors";
 import type { AuthedStaff } from "./auth";
 import { writeAudit } from "./audit";
+import { guardUnique, invalid, nextSortOrder, notFound } from "./shared";
 
 // ---------- shapes sent to the screens ----------
 
@@ -185,28 +184,6 @@ export async function getOrderableMenu(): Promise<OrderableMenu> {
     })),
   };
 }
-
-// ---------- helpers ----------
-
-type MaxSort = Promise<{ _max: { sortOrder: number | null } }>;
-
-/** New things go to the end of their list. */
-async function nextSortOrder(aggregate: MaxSort): Promise<number> {
-  return ((await aggregate)._max.sortOrder ?? 0) + 10;
-}
-
-async function guardUnique<T>(work: () => Promise<T>): Promise<T> {
-  try {
-    return await work();
-  } catch (error) {
-    if (isUniqueViolation(error)) throw new ApiError(409, "CONFLICT");
-    throw error;
-  }
-}
-
-const notFound = () => new ApiError(404, "NOT_FOUND");
-const invalid = () => new ApiError(400, "INVALID_INPUT");
-
 
 // ---------- stations ----------
 
