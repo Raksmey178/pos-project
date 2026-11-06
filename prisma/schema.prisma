@@ -32,20 +32,21 @@ enum Role {
 
 // Staff are never deleted (the audit log points at them). They are deactivated.
 model Staff {
-  id                String      @id @default(uuid())
-  name              String      @unique
+  id                String          @id @default(uuid())
+  name              String          @unique
   role              Role
   pinHash           String // Argon2 hash. The PIN itself is never stored.
-  isActive          Boolean     @default(true)
-  failedPinAttempts Int         @default(0)
+  isActive          Boolean         @default(true)
+  failedPinAttempts Int             @default(0)
   lockedUntil       DateTime?
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
   sessions          Session[]
   auditLogs         AuditLog[]
-  ordersOpened      Order[]     @relation("OrderOpenedBy")
-  itemsAdded        OrderItem[] @relation("OrderItemAddedBy")
-  itemsRemoved      OrderItem[] @relation("OrderItemRemovedBy")
+  ordersOpened      Order[]         @relation("OrderOpenedBy")
+  itemsAdded        OrderItem[]     @relation("OrderItemAddedBy")
+  itemsRemoved      OrderItem[]     @relation("OrderItemRemovedBy")
+  ticketsSent       KitchenTicket[]
 }
 
 // One row per login. The browser holds a random token; we store only its hash,
@@ -86,12 +87,13 @@ model AuditLog {
 
 // Where an item is prepared: Kitchen, Bar, ... Each station gets its own kitchen tickets (Phase 6).
 model Station {
-  id         String      @id @default(uuid())
-  name       String      @unique
-  sortOrder  Int         @default(0)
-  isActive   Boolean     @default(true)
+  id         String          @id @default(uuid())
+  name       String          @unique
+  sortOrder  Int             @default(0)
+  isActive   Boolean         @default(true)
   items      MenuItem[]
   orderItems OrderItem[]
+  tickets    KitchenTicket[]
 }
 
 model Category {
@@ -239,25 +241,26 @@ model Counter {
 }
 
 model Order {
-  id              String       @id @default(uuid())
-  clientOrderId   String       @unique // made by the device; a retry never creates a second order
+  id              String          @id @default(uuid())
+  clientOrderId   String          @unique // made by the device; a retry never creates a second order
   businessDate    String // "2026-11-05" in the restaurant's time zone
   orderNumber     Int // 1, 2, 3 ... restarts every business day
   type            OrderType
-  status          OrderStatus  @default(OPEN)
+  status          OrderStatus     @default(OPEN)
   guestCount      Int?
   customerName    String? // takeaway / delivery
   customerPhone   String?
   deliveryAddress String?
   openedById      String
-  openedBy        Staff        @relation("OrderOpenedBy", fields: [openedById], references: [id])
+  openedBy        Staff           @relation("OrderOpenedBy", fields: [openedById], references: [id])
   mergedIntoId    String?
-  mergedInto      Order?       @relation("OrderMerge", fields: [mergedIntoId], references: [id])
-  mergedFrom      Order[]      @relation("OrderMerge")
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  mergedInto      Order?          @relation("OrderMerge", fields: [mergedIntoId], references: [id])
+  mergedFrom      Order[]         @relation("OrderMerge")
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
   tables          OrderTable[]
   items           OrderItem[]
+  tickets         KitchenTicket[]
 
   @@unique([businessDate, orderNumber])
   @@index([status])
@@ -300,8 +303,16 @@ model OrderItem {
   removedById    String?
   removedBy      Staff?              @relation("OrderItemRemovedBy", fields: [removedById], references: [id])
   modifiers      OrderItemModifier[]
+  // Phase 6: sent to the kitchen on a ticket (null = still a draft on the waiter's screen)
+  ticketId       String?
+  ticket         KitchenTicket?      @relation(fields: [ticketId], references: [id])
+  sentAt         DateTime?
+  preparingAt    DateTime?
+  readyAt        DateTime?
+  servedAt       DateTime?
 
   @@index([orderId])
+  @@index([ticketId])
 }
 
 model OrderItemModifier {
@@ -315,4 +326,27 @@ model OrderItemModifier {
   priceDeltaCents  Int
 
   @@index([orderItemId])
+}
+
+// ---------- Phase 6: kitchen ----------
+// "Send to kitchen" turns the new items of an order into tickets, one per station
+// (Kitchen, Bar ...). Each ticket is a record, so it can be shown, reprinted and counted.
+
+model KitchenTicket {
+  id           String      @id @default(uuid())
+  clientSendId String // made by the device for one "send"; a retry never creates a second ticket
+  orderId      String
+  order        Order       @relation(fields: [orderId], references: [id])
+  stationId    String
+  station      Station     @relation(fields: [stationId], references: [id])
+  ticketNumber Int // 1, 2, 3 ... restarts every business day
+  sentById     String
+  sentBy       Staff       @relation(fields: [sentById], references: [id])
+  sentAt       DateTime    @default(now())
+  printCount   Int         @default(0) // every print and reprint is counted
+  items        OrderItem[]
+
+  @@unique([clientSendId, stationId])
+  @@index([orderId])
+  @@index([stationId, sentAt])
 }

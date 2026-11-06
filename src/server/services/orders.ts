@@ -27,6 +27,9 @@ export type OrderItemView = {
   modifiers: { id: string; groupNameKm: string; nameKm: string; priceDeltaCents: number }[];
   /** (price + options) x quantity, worked out by the money module */
   lineTotalCents: number;
+  /** false = still a draft on the waiter's screen; true = sent to the kitchen on a ticket */
+  sent: boolean;
+  ticketNumber: number | null;
 };
 
 export type OrderView = {
@@ -46,6 +49,10 @@ export type OrderView = {
   tables: { id: string; name: string }[];
   items: OrderItemView[];
   subtotalCents: number;
+  /** items not yet sent to the kitchen */
+  unsentCount: number;
+  /** items the kitchen marked ready, waiting to be served */
+  readyCount: number;
 };
 
 export type OrderSummary = {
@@ -56,6 +63,7 @@ export type OrderSummary = {
   tableNames: string[];
   itemCount: number;
   subtotalCents: number;
+  readyCount: number;
   createdAt: string;
 };
 
@@ -88,6 +96,8 @@ const ORDER_VIEW = {
       quantity: true,
       note: true,
       status: true,
+      ticketId: true,
+      ticket: { select: { ticketNumber: true } },
       modifiers: { orderBy: { id: "asc" }, select: { id: true, groupNameKm: true, nameKm: true, priceDeltaCents: true } },
     },
   },
@@ -95,11 +105,13 @@ const ORDER_VIEW = {
 
 type ReadClient = Pick<typeof db, "order">;
 
-async function readOrder(client: ReadClient, id: string): Promise<OrderView> {
+export async function readOrder(client: ReadClient, id: string): Promise<OrderView> {
   const row = await client.order.findUniqueOrThrow({ where: { id }, select: ORDER_VIEW });
 
-  const items: OrderItemView[] = row.items.map((item) => ({
+  const items: OrderItemView[] = row.items.map(({ ticketId, ticket, ...item }) => ({
     ...item,
+    sent: ticketId !== null,
+    ticketNumber: ticket?.ticketNumber ?? null,
     lineTotalCents: calculateLineTotalCents({
       unitPriceCents: item.unitPriceCents,
       modifierDeltasCents: item.modifiers.map((modifier) => modifier.priceDeltaCents),
@@ -124,6 +136,8 @@ async function readOrder(client: ReadClient, id: string): Promise<OrderView> {
     tables: row.tables.map((entry) => entry.table),
     items,
     subtotalCents: items.reduce((sum, item) => sum + item.lineTotalCents, 0),
+    unsentCount: items.filter((item) => !item.sent).length,
+    readyCount: items.filter((item) => item.status === "READY").length,
   };
 }
 
@@ -148,7 +162,7 @@ export async function listOpenOrders(): Promise<OrderSummary[]> {
       tables: { where: { releasedAt: null }, select: { table: { select: { name: true } } } },
       items: {
         where: { removedAt: null },
-        select: { unitPriceCents: true, quantity: true, modifiers: { select: { priceDeltaCents: true } } },
+        select: { unitPriceCents: true, quantity: true, status: true, modifiers: { select: { priceDeltaCents: true } } },
       },
     },
   });
@@ -170,6 +184,7 @@ export async function listOpenOrders(): Promise<OrderSummary[]> {
         }),
       0,
     ),
+    readyCount: row.items.filter((item) => item.status === "READY").length,
     createdAt: row.createdAt.toISOString(),
   }));
 }
@@ -177,14 +192,13 @@ export async function listOpenOrders(): Promise<OrderSummary[]> {
 // ---------- helpers ----------
 
 /** Locks the orders until the end of the transaction, so two people cannot change the same order at once. */
-async function lockOrders(tx: Prisma.TransactionClient, ids: string[]): Promise<void> {
+export async function lockOrders(tx: Prisma.TransactionClient, ids: string[]): Promise<void> {
   const sorted = [...new Set(ids)].sort();
   await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" IN (${Prisma.join(sorted)}) ORDER BY "id" FOR UPDATE`;
 }
 
-/** Order numbers: 1, 2, 3 ... per business day, with no gaps (the counter is rolled back with the order). */
-async function nextOrderNumber(tx: Prisma.TransactionClient, businessDate: string): Promise<number> {
-  const key = `order:${businessDate}`;
+/** Gap-free numbers (order numbers, ticket numbers): the counter is rolled back together with what used it. */
+export async function nextCounter(tx: Prisma.TransactionClient, key: string): Promise<number> {
   const rows = await tx.$queryRaw<{ value: number }[]>`
     INSERT INTO "Counter" ("key", "value") VALUES (${key}, 1)
     ON CONFLICT ("key") DO UPDATE SET "value" = "Counter"."value" + 1
@@ -194,7 +208,7 @@ async function nextOrderNumber(tx: Prisma.TransactionClient, businessDate: strin
 
 type OrderState = { id: string; type: OrderView["type"]; status: OrderView["status"] };
 
-async function loadOpenOrder(tx: Prisma.TransactionClient, id: string): Promise<OrderState> {
+export async function loadOpenOrder(tx: Prisma.TransactionClient, id: string): Promise<OrderState> {
   const order = await tx.order.findUnique({ where: { id }, select: { id: true, type: true, status: true } });
   if (!order) throw notFound();
   if (order.status !== "OPEN" && order.status !== "BILL_REQUESTED") throw new ApiError(409, "ORDER_CLOSED");
@@ -230,7 +244,7 @@ export async function createOrder(
       }
 
       const businessDate = businessDateOf(new Date(), env.RESTAURANT_TIMEZONE);
-      const orderNumber = await nextOrderNumber(tx, businessDate);
+      const orderNumber = await nextCounter(tx, `order:${businessDate}`);
 
       const order = await tx.order.create({
         data: {
@@ -390,13 +404,14 @@ export async function removeItem(actor: AuthedStaff, orderId: string, itemId: st
 
     const item = await tx.orderItem.findUnique({
       where: { id: itemId },
-      select: { orderId: true, removedAt: true, status: true, nameKm: true, quantity: true },
+      select: { orderId: true, removedAt: true, ticketId: true, nameKm: true, quantity: true },
     });
     if (!item || item.orderId !== orderId) throw notFound();
     if (item.removedAt) return readOrder(tx, orderId); // already removed: nothing to do
 
-    // From Phase 6 an item that was sent to the kitchen can only be removed with a manager's approval.
-    if (item.status !== "NEW") throw invalid();
+    // Once an item is on a kitchen ticket the kitchen may already be cooking it.
+    // (Voiding a sent item with a manager's approval comes with the void and refund phase.)
+    if (item.ticketId !== null) throw new ApiError(409, "ITEM_SENT");
 
     await tx.orderItem.update({ where: { id: itemId }, data: { removedAt: new Date(), removedById: actor.id } });
     await writeAudit(tx, {
@@ -500,6 +515,8 @@ export async function mergeOrders(actor: AuthedStaff, targetOrderId: string, sou
     if (target.type !== "DINE_IN" || source.type !== "DINE_IN") throw invalid();
 
     const moved = await tx.orderItem.updateMany({ where: { orderId: sourceOrderId }, data: { orderId: targetOrderId } });
+    // Kitchen tickets follow their items, so the kitchen sees the surviving order's number and tables.
+    await tx.kitchenTicket.updateMany({ where: { orderId: sourceOrderId }, data: { orderId: targetOrderId } });
     await tx.orderTable.updateMany({ where: { orderId: sourceOrderId, releasedAt: null }, data: { orderId: targetOrderId } });
 
     const guests = await tx.order.findMany({ where: { id: { in: [targetOrderId, sourceOrderId] } }, select: { guestCount: true } });

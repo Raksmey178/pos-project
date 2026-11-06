@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { EntityForm, type Field, type FormValues } from "@/components/menu/entity-form";
 import { useErrorText } from "@/components/use-error-text";
-import { cardClass, chipOn, chipWarn, primaryButton, smallButton } from "@/components/ui-classes";
+import { cardClass, chipOff, chipOn, chipWarn, primaryButton, smallButton } from "@/components/ui-classes";
 import { callApi } from "@/lib/api-client";
 import { newClientId } from "@/lib/client-id";
 import { formatUsd } from "@/lib/money";
@@ -123,7 +123,8 @@ export function OrdersList({ orders, canEdit }: { orders: OrderSummary[]; canEdi
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <span className={order.status === "OPEN" ? chipOn : chipWarn}>{statusLabel[order.status]}</span>
+                {order.readyCount > 0 && <span className={chipOn}>✓ {t("readyBadge", { count: order.readyCount })}</span>}
+                <span className={order.status === "OPEN" ? chipOff : chipWarn}>{statusLabel[order.status]}</span>
                 <span className="text-xl">{formatUsd(order.subtotalCents)}</span>
               </div>
             </Link>

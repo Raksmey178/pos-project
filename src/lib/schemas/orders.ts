@@ -43,3 +43,15 @@ export const addOrderItemSchema = z.strictObject({
 export const billSchema = z.strictObject({ requested: z.boolean() });
 export const transferTableSchema = z.strictObject({ fromTableId: z.uuid(), toTableId: z.uuid() });
 export const mergeOrdersSchema = z.strictObject({ sourceOrderId: z.uuid() });
+
+// ----- kitchen (Phase 6) -----
+export const sendToKitchenSchema = z.strictObject({ clientSendId: z.uuid() });
+
+const itemStatus = z.enum(["NEW", "PREPARING", "READY", "SERVED"]);
+// `from` is what the screen believes the items are now. If someone else changed them first, the server refuses
+// instead of overwriting, so a stale screen can never move a dish backwards by accident.
+export const itemStatusChangeSchema = z.strictObject({
+  itemIds: z.array(z.uuid()).min(1).max(60),
+  from: itemStatus,
+  to: itemStatus,
+});

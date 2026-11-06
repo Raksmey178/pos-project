@@ -13,6 +13,13 @@ export const ERROR_CODES = [
   "TABLE_OVERLAP",
   "ZONE_NOT_EMPTY",
   "ZONE_FULL",
+  "TABLE_IN_USE",
+  "ITEM_SOLD_OUT",
+  "ORDER_CLOSED",
+  "ORDER_NOT_EMPTY",
+  "ITEM_SENT",
+  "NOTHING_TO_SEND",
+  "STATUS_CHANGED",
   "NETWORK", // used by screens when the request itself fails
   "INTERNAL",
 ] as const;

@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useAdminAction } from "@/components/use-admin-action";
 import { cardClass, chipOff, chipOn, chipWarn, inputClass, labelClass, primaryButton, smallButton } from "@/components/ui-classes";
 import { callApi } from "@/lib/api-client";
+import { newClientId } from "@/lib/client-id";
 import { formatUsd } from "@/lib/money";
 import type { OrderableMenu } from "@/server/services/menu";
 import type { OrderSummary, OrderView } from "@/server/services/orders";
@@ -20,12 +21,14 @@ export function OrderScreen({
   freeTables,
   mergeCandidates,
   canEdit,
+  canServe,
 }: {
   order: OrderView;
   menu: OrderableMenu;
   freeTables: FreeTable[];
   mergeCandidates: OrderSummary[];
   canEdit: boolean;
+  canServe: boolean;
 }) {
   const t = useTranslations("Orders");
   const router = useRouter();
@@ -47,6 +50,23 @@ export function OrderScreen({
   const typeLabel = { DINE_IN: t("typeDINE_IN"), TAKEAWAY: t("typeTAKEAWAY"), DELIVERY: t("typeDELIVERY") } as const;
   const statusLabel = { OPEN: t("statusOPEN"), BILL_REQUESTED: t("statusBILL_REQUESTED"), PAID: t("statusPAID"), VOIDED: t("statusVOIDED"), MERGED: t("statusMERGED") } as const;
   const post = (path: string, body?: unknown) => callApi(`/api/orders/${order.id}${path}`, "POST", body);
+
+  // One id per "send". If the network drops and the button is tapped again for the SAME unsent items,
+  // the id is reused so nothing is sent twice. New unsent items get a new id.
+  const lastSend = useRef<{ id: string; signature: string } | null>(null);
+  async function sendToKitchen() {
+    const signature = order.items.filter((item) => !item.sent).map((item) => item.id).join(",");
+    const attempt = lastSend.current?.signature === signature ? lastSend.current : { id: newClientId(), signature };
+    lastSend.current = attempt;
+    if (await act.run("send", () => post("/send", { clientSendId: attempt.id }))) lastSend.current = null;
+  }
+
+  const readyIds = order.items.filter((item) => item.status === "READY").map((item) => item.id);
+  const serve = (itemIds: string[]) =>
+    act.run("serve", () => callApi("/api/kitchen/items/status", "POST", { itemIds, from: "READY", to: "SERVED" }));
+
+  const itemStatusLabel = { NEW: t("itemNEW"), PREPARING: t("itemPREPARING"), READY: t("itemREADY"), SERVED: t("itemSERVED") } as const;
+  const itemStatusChip = { NEW: chipOff, PREPARING: chipWarn, READY: chipOn, SERVED: chipOff } as const;
 
   async function cancelOrder() {
     if (await act.run("cancel", () => post("/cancel"))) router.push("/orders");
@@ -113,10 +133,18 @@ export function OrderScreen({
                     </p>
                   )}
                   {item.note && <p className="text-base italic text-zinc-600 dark:text-zinc-400">“{item.note}”</p>}
+                  <span className={`${item.sent ? itemStatusChip[item.status] : chipOff} mt-1 inline-block`}>
+                    {item.sent ? itemStatusLabel[item.status] : t("unsent")}
+                  </span>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <span className="text-xl">{formatUsd(item.lineTotalCents)}</span>
-                  {editable && (
+                  {canServe && isOpen && item.status === "READY" && (
+                    <button type="button" disabled={act.busy !== null} className={primaryButton} onClick={() => void serve([item.id])}>
+                      {t("serve")}
+                    </button>
+                  )}
+                  {editable && !item.sent && (
                     <button
                       type="button"
                       disabled={act.busy !== null}
@@ -140,11 +168,21 @@ export function OrderScreen({
       {/* ----- actions ----- */}
       {editable && (
         <div className="mb-4 flex flex-wrap gap-2">
+          {order.unsentCount > 0 && (
+            <button type="button" disabled={act.busy !== null} className={primaryButton} onClick={() => void sendToKitchen()}>
+              {t("sendCount", { count: order.unsentCount })}
+            </button>
+          )}
+          {canServe && readyIds.length > 1 && (
+            <button type="button" disabled={act.busy !== null} className={smallButton} onClick={() => void serve(readyIds)}>
+              {t("serveAll")}
+            </button>
+          )}
           {order.items.length > 0 && (
             <button
               type="button"
               disabled={act.busy !== null}
-              className={order.status === "OPEN" ? primaryButton : smallButton}
+              className={order.status === "OPEN" && order.unsentCount === 0 ? primaryButton : smallButton}
               onClick={() => void act.run("bill", () => post("/bill", { requested: order.status === "OPEN" }))}
             >
               {order.status === "OPEN" ? t("requestBill") : t("reopen")}
@@ -167,6 +205,8 @@ export function OrderScreen({
           )}
         </div>
       )}
+
+      {editable && order.items.some((item) => item.sent) && <p className="mb-4 text-base text-zinc-500">{t("sentHint")}</p>}
 
       {editable && panel === "transfer" && (
         <section className={`${cardClass} mb-4`}>

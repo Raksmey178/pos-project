@@ -34,6 +34,7 @@ export default async function OrderPage(props: PageProps<"/orders/[id]">) {
       freeTables={freeTables}
       mergeCandidates={mergeCandidates}
       canEdit={hasPermission(staff.role, "orders:edit")}
+      canServe={hasPermission(staff.role, "kitchen:serve")}
     />
   );
 }

@@ -12,7 +12,8 @@
     "menuAdmin": "គ្រប់គ្រងម៉ឺនុយ",
     "tables": "តុ",
     "tablesAdmin": "គ្រប់គ្រងតុ",
-    "orders": "ការបញ្ជាទិញ"
+    "orders": "ការបញ្ជាទិញ",
+    "kitchen": "ផ្ទះបាយ"
   },
   "Roles": {
     "WAITER": "អ្នកបម្រើ",
@@ -77,7 +78,10 @@
     "TABLE_IN_USE": "តុនេះមានការបញ្ជាទិញរួចហើយ",
     "ITEM_SOLD_OUT": "មុខម្ហូបនេះអស់ស្តុក",
     "ORDER_CLOSED": "ការបញ្ជាទិញនេះបានបិទរួចហើយ",
-    "ORDER_NOT_EMPTY": "ការបញ្ជាទិញនេះមានមុខម្ហូបរួចហើយ"
+    "ORDER_NOT_EMPTY": "ការបញ្ជាទិញនេះមានមុខម្ហូបរួចហើយ",
+    "ITEM_SENT": "មុខម្ហូបនេះបានបញ្ជូនទៅផ្ទះបាយរួចហើយ",
+    "NOTHING_TO_SEND": "គ្មានមុខម្ហូបថ្មីដើម្បីបញ្ជូនទេ",
+    "STATUS_CHANGED": "ស្ថានភាពបានផ្លាស់ប្តូរដោយអ្នកផ្សេង សូមមើលម្តងទៀត"
   },
   "Menu": {
     "title": "ម៉ឺនុយ",
@@ -226,6 +230,47 @@
     "confirm": "បញ្ជាក់",
     "openedBy": "បើកដោយ {name}",
     "noMenu": "មិនទាន់មានម៉ឺនុយទេ",
-    "close": "បិទ"
+    "close": "បិទ",
+    "send": "បញ្ជូនទៅផ្ទះបាយ",
+    "sendCount": "បញ្ជូនទៅផ្ទះបាយ ({count})",
+    "unsent": "មិនទាន់បញ្ជូន",
+    "itemNEW": "ថ្មី",
+    "itemPREPARING": "កំពុងរៀបចំ",
+    "itemREADY": "រួចរាល់",
+    "itemSERVED": "បានដឹកហើយ",
+    "serve": "ដឹកហើយ",
+    "serveAll": "ដឹកទាំងអស់ដែលរួចរាល់",
+    "readyBadge": "{count} រួចរាល់",
+    "sentHint": "មុខម្ហូបដែលបានបញ្ជូនទៅផ្ទះបាយមិនអាចដកចេញបានទេ"
+  },
+  "Kitchen": {
+    "title": "ផ្ទះបាយ",
+    "back": "ត្រឡប់ទៅទំព័រដើម",
+    "allStations": "ទាំងអស់",
+    "viewActive": "កំពុងដំណើរការ",
+    "viewReady": "រួចរាល់ត្រូវដឹក",
+    "empty": "គ្មានការបញ្ជាទិញទេ",
+    "ticket": "សំបុត្រលេខ {number}",
+    "order": "ការបញ្ជាទិញលេខ {number}",
+    "tableNames": "តុ {names}",
+    "typeDINE_IN": "ញ៉ាំនៅហាង",
+    "typeTAKEAWAY": "យកទៅ",
+    "typeDELIVERY": "ដឹកជូន",
+    "minutes": "{minutes} នាទី",
+    "statusNEW": "ថ្មី",
+    "statusPREPARING": "កំពុងរៀបចំ",
+    "statusREADY": "រួចរាល់",
+    "statusSERVED": "បានដឹកហើយ",
+    "start": "ចាប់ផ្តើម",
+    "ready": "រួចរាល់",
+    "served": "ដឹកហើយ",
+    "undo": "ត្រឡប់ក្រោយ",
+    "startAll": "ចាប់ផ្តើមទាំងអស់",
+    "readyAll": "រួចរាល់ទាំងអស់",
+    "servedAll": "ដឹកទាំងអស់",
+    "print": "បោះពុម្ព",
+    "printTitle": "សំបុត្រផ្ទះបាយ",
+    "printedTimes": "បានបោះពុម្ព {count} ដង",
+    "autoRefresh": "ធ្វើបច្ចុប្បន្នភាពដោយស្វ័យប្រវត្តិ"
   }
 }
