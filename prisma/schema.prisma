@@ -32,17 +32,20 @@ enum Role {
 
 // Staff are never deleted (the audit log points at them). They are deactivated.
 model Staff {
-  id                String     @id @default(uuid())
-  name              String     @unique
+  id                String      @id @default(uuid())
+  name              String      @unique
   role              Role
   pinHash           String // Argon2 hash. The PIN itself is never stored.
-  isActive          Boolean    @default(true)
-  failedPinAttempts Int        @default(0)
+  isActive          Boolean     @default(true)
+  failedPinAttempts Int         @default(0)
   lockedUntil       DateTime?
-  createdAt         DateTime   @default(now())
-  updatedAt         DateTime   @updatedAt
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
   sessions          Session[]
   auditLogs         AuditLog[]
+  ordersOpened      Order[]     @relation("OrderOpenedBy")
+  itemsAdded        OrderItem[] @relation("OrderItemAddedBy")
+  itemsRemoved      OrderItem[] @relation("OrderItemRemovedBy")
 }
 
 // One row per login. The browser holds a random token; we store only its hash,
@@ -83,11 +86,12 @@ model AuditLog {
 
 // Where an item is prepared: Kitchen, Bar, ... Each station gets its own kitchen tickets (Phase 6).
 model Station {
-  id        String     @id @default(uuid())
-  name      String     @unique
-  sortOrder Int        @default(0)
-  isActive  Boolean    @default(true)
-  items     MenuItem[]
+  id         String      @id @default(uuid())
+  name       String      @unique
+  sortOrder  Int         @default(0)
+  isActive   Boolean     @default(true)
+  items      MenuItem[]
+  orderItems OrderItem[]
 }
 
 model Category {
@@ -114,6 +118,7 @@ model MenuItem {
   createdAt      DateTime                @default(now())
   updatedAt      DateTime                @updatedAt
   modifierGroups MenuItemModifierGroup[]
+  orderItems     OrderItem[]
 
   @@unique([categoryId, nameKm])
   @@index([categoryId])
@@ -136,14 +141,15 @@ model ModifierGroup {
 
 // One answer: "Large" (+$1.00), "No sugar" ($0.00), "Extra egg" (+$0.50).
 model ModifierOption {
-  id              String        @id @default(uuid())
+  id              String              @id @default(uuid())
   groupId         String
-  group           ModifierGroup @relation(fields: [groupId], references: [id])
+  group           ModifierGroup       @relation(fields: [groupId], references: [id])
   nameKm          String
   nameEn          String?
-  priceDeltaCents Int           @default(0) // may be negative
-  sortOrder       Int           @default(0)
-  isActive        Boolean       @default(true)
+  priceDeltaCents Int                 @default(0) // may be negative
+  sortOrder       Int                 @default(0)
+  isActive        Boolean             @default(true)
+  orderModifiers  OrderItemModifier[]
 
   @@unique([groupId, nameKm])
   @@index([groupId])
@@ -182,19 +188,131 @@ model Zone {
 }
 
 model DiningTable {
-  id        String     @id @default(uuid())
-  zoneId    String
-  zone      Zone       @relation(fields: [zoneId], references: [id])
-  name      String     @unique
-  capacity  Int        @default(4)
-  shape     TableShape @default(RECT)
-  gridX     Int        @default(0)
-  gridY     Int        @default(0)
-  width     Int        @default(2)
-  height    Int        @default(2)
-  isActive  Boolean    @default(true)
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  id          String       @id @default(uuid())
+  zoneId      String
+  zone        Zone         @relation(fields: [zoneId], references: [id])
+  name        String       @unique
+  capacity    Int          @default(4)
+  shape       TableShape   @default(RECT)
+  gridX       Int          @default(0)
+  gridY       Int          @default(0)
+  width       Int          @default(2)
+  height      Int          @default(2)
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  orderTables OrderTable[]
 
   @@index([zoneId])
+}
+
+// ---------- Phase 5: orders ----------
+// What was ordered is COPIED into the order (name, price, options), so changing the menu
+// later never changes an old order or a past sale. Nothing here is deleted: a removed
+// item is marked removedAt, a cancelled order becomes VOIDED.
+
+enum OrderType {
+  DINE_IN
+  TAKEAWAY
+  DELIVERY
+}
+
+enum OrderStatus {
+  OPEN
+  BILL_REQUESTED
+  PAID // Phase 8
+  VOIDED
+  MERGED // its items and tables moved into another order
+}
+
+enum OrderItemStatus {
+  NEW
+  PREPARING // Phase 6
+  READY
+  SERVED
+}
+
+// Gap-free numbers: one row per counter (for orders: one per business day).
+model Counter {
+  key   String @id
+  value Int    @default(0)
+}
+
+model Order {
+  id              String       @id @default(uuid())
+  clientOrderId   String       @unique // made by the device; a retry never creates a second order
+  businessDate    String // "2026-11-05" in the restaurant's time zone
+  orderNumber     Int // 1, 2, 3 ... restarts every business day
+  type            OrderType
+  status          OrderStatus  @default(OPEN)
+  guestCount      Int?
+  customerName    String? // takeaway / delivery
+  customerPhone   String?
+  deliveryAddress String?
+  openedById      String
+  openedBy        Staff        @relation("OrderOpenedBy", fields: [openedById], references: [id])
+  mergedIntoId    String?
+  mergedInto      Order?       @relation("OrderMerge", fields: [mergedIntoId], references: [id])
+  mergedFrom      Order[]      @relation("OrderMerge")
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  tables          OrderTable[]
+  items           OrderItem[]
+
+  @@unique([businessDate, orderNumber])
+  @@index([status])
+}
+
+// Which tables an order occupies. releasedAt = null means "still occupying".
+// A database rule allows only ONE such row per table (prisma/sql/one-active-order-per-table.sql).
+model OrderTable {
+  id         String      @id @default(uuid())
+  orderId    String
+  order      Order       @relation(fields: [orderId], references: [id])
+  tableId    String
+  table      DiningTable @relation(fields: [tableId], references: [id])
+  createdAt  DateTime    @default(now())
+  releasedAt DateTime?
+
+  @@index([orderId])
+  @@index([tableId])
+}
+
+model OrderItem {
+  id             String              @id @default(uuid())
+  clientItemId   String              @unique // made by the device; a retry never adds the item twice
+  orderId        String
+  order          Order               @relation(fields: [orderId], references: [id])
+  menuItemId     String
+  menuItem       MenuItem            @relation(fields: [menuItemId], references: [id])
+  nameKm         String // copy of the menu name at the time of ordering
+  nameEn         String?
+  unitPriceCents Int // copy of the menu price at the time of ordering
+  quantity       Int
+  note           String?
+  status         OrderItemStatus     @default(NEW)
+  stationId      String // where it is prepared (copy), for kitchen tickets in Phase 6
+  station        Station             @relation(fields: [stationId], references: [id])
+  addedById      String
+  addedBy        Staff               @relation("OrderItemAddedBy", fields: [addedById], references: [id])
+  createdAt      DateTime            @default(now())
+  removedAt      DateTime?
+  removedById    String?
+  removedBy      Staff?              @relation("OrderItemRemovedBy", fields: [removedById], references: [id])
+  modifiers      OrderItemModifier[]
+
+  @@index([orderId])
+}
+
+model OrderItemModifier {
+  id               String         @id @default(uuid())
+  orderItemId      String
+  orderItem        OrderItem      @relation(fields: [orderItemId], references: [id])
+  modifierOptionId String
+  modifierOption   ModifierOption @relation(fields: [modifierOptionId], references: [id])
+  groupNameKm      String // copies, as above
+  nameKm           String
+  priceDeltaCents  Int
+
+  @@index([orderItemId])
 }

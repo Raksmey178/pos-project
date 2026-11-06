@@ -16,7 +16,7 @@ export type CanvasTable = {
   status: TableStatus;
 };
 
-const STATUS_CLASS: Record<TableStatus, string> = {
+export const STATUS_CLASS: Record<TableStatus, string> = {
   AVAILABLE: "border-green-600 bg-green-100 text-green-950 dark:bg-green-950 dark:text-green-100",
   OCCUPIED: "border-red-600 bg-red-100 text-red-950 dark:bg-red-950 dark:text-red-100",
   BILL_REQUESTED: "border-amber-600 bg-amber-100 text-amber-950 dark:bg-amber-950 dark:text-amber-100",
@@ -44,6 +44,7 @@ export function FloorPlanCanvas({
   onMove?: (id: string, gridX: number, gridY: number) => void | Promise<void>;
   seatsLabel: (count: number) => string;
 }) {
+  const interactive = editable || Boolean(onSelect);
   const boardRef = useRef<HTMLDivElement>(null);
   const startRef = useRef<{ px: number; py: number; x: number; y: number; cell: number } | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -102,10 +103,11 @@ export function FloorPlanCanvas({
         return (
           <div
             key={table.id}
-            role={editable ? "button" : undefined}
-            tabIndex={editable ? 0 : undefined}
-            aria-pressed={editable ? selected : undefined}
-            onClick={editable ? () => onSelect?.(table.id) : undefined}
+            role={interactive ? "button" : undefined}
+            tabIndex={interactive ? 0 : undefined}
+            aria-pressed={interactive ? selected : undefined}
+            onClick={interactive ? () => onSelect?.(table.id) : undefined}
+            onKeyDown={interactive ? (event) => { if (event.key === "Enter" || event.key === " ") onSelect?.(table.id); } : undefined}
             onPointerDown={(event) => onPointerDown(event, table)}
             onPointerMove={(event) => onPointerMove(event, table)}
             onPointerUp={() => void onPointerUp(table)}
@@ -117,7 +119,7 @@ export function FloorPlanCanvas({
               table.shape === "ROUND" ? "rounded-full" : "rounded-xl"
             } ${dragging && drag.blocked ? "border-red-600 bg-red-200 text-red-950" : STATUS_CLASS[table.status]} ${
               selected ? "ring-4 ring-zinc-900 dark:ring-zinc-100" : ""
-            } ${editable ? "cursor-grab active:cursor-grabbing" : ""}`}
+            } ${editable ? "cursor-grab active:cursor-grabbing" : interactive ? "cursor-pointer" : ""}`}
             style={{
               left: `${(x / GRID_COLS) * 100}%`,
               top: `${(y / GRID_ROWS) * 100}%`,

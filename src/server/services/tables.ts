@@ -24,7 +24,10 @@ export type TableRow = {
   width: number;
   height: number;
   isActive: boolean;
+  /** Worked out from the table's open order (never stored). */
   status: TableStatus;
+  /** The open order on this table, if any: tapping the table opens it. */
+  orderId: string | null;
 };
 export type FloorPlan = { zones: { id: string; name: string; tables: TableRow[] }[] };
 export type TablesAdminData = { zones: ZoneRow[]; tables: TableRow[] };
@@ -47,10 +50,25 @@ const BY_ORDER = [{ sortOrder: "asc" }, { id: "asc" }] as const;
 type Placed = { gridX: number; gridY: number; width: number; height: number };
 const toRect = (table: Placed): Rect => ({ x: table.gridX, y: table.gridY, w: table.width, h: table.height });
 
-// A table's status is worked out, never stored. Orders arrive in Phase 5: from then on
-// "occupied" / "bill requested" come from the table's open order. Until then every table is free.
-function withStatus<T extends object>(row: T): T & { status: TableStatus } {
-  return { ...row, status: "AVAILABLE" };
+type Occupancy = Map<string, { orderId: string; status: TableStatus }>;
+
+/**
+ * A table's status is worked out, never stored: a table is "occupied" while an open order sits on it,
+ * and "bill requested" when that order's bill was requested. No open order = available.
+ */
+async function loadOccupancy(client: Pick<typeof db, "orderTable"> = db): Promise<Occupancy> {
+  const rows = await client.orderTable.findMany({
+    where: { releasedAt: null, order: { status: { in: ["OPEN", "BILL_REQUESTED"] } } },
+    select: { tableId: true, order: { select: { id: true, status: true } } },
+  });
+  return new Map(
+    rows.map((row) => [row.tableId, { orderId: row.order.id, status: row.order.status === "BILL_REQUESTED" ? "BILL_REQUESTED" : "OCCUPIED" }]),
+  );
+}
+
+function withStatus<T extends { id: string }>(row: T, occupancy: Occupancy): T & { status: TableStatus; orderId: string | null } {
+  const entry = occupancy.get(row.id);
+  return { ...row, status: entry?.status ?? "AVAILABLE", orderId: entry?.orderId ?? null };
 }
 
 // ---------- reading ----------
@@ -62,7 +80,14 @@ export async function getFloorPlan(): Promise<FloorPlan> {
     orderBy: [...BY_ORDER],
     select: { id: true, name: true, tables: { where: { isActive: true }, orderBy: { name: "asc" }, select: TABLE } },
   });
-  return { zones: zones.map((zone) => ({ id: zone.id, name: zone.name, tables: zone.tables.map(withStatus) })) };
+  const occupancy = await loadOccupancy();
+  return {
+    zones: zones.map((zone) => ({
+      id: zone.id,
+      name: zone.name,
+      tables: zone.tables.map((table) => withStatus(table, occupancy)),
+    })),
+  };
 }
 
 /** What the manager edits: everything, including switched-off zones and tables. */
@@ -71,7 +96,8 @@ export async function getTablesAdminData(): Promise<TablesAdminData> {
     db.zone.findMany({ select: ZONE, orderBy: [...BY_ORDER] }),
     db.diningTable.findMany({ select: TABLE, orderBy: { name: "asc" } }),
   ]);
-  return { zones, tables: tables.map(withStatus) };
+  const occupancy = await loadOccupancy();
+  return { zones, tables: tables.map((table) => withStatus(table, occupancy)) };
 }
 
 // ---------- helpers ----------
@@ -164,7 +190,7 @@ export async function createTable(actor: AuthedStaff, input: z.infer<typeof crea
         entityId: row.id,
         details: { name: row.name, zoneId: row.zoneId },
       });
-      return withStatus(row);
+      return withStatus(row, new Map());
     }),
   );
 }
@@ -205,7 +231,11 @@ export async function updateTable(actor: AuthedStaff, id: string, patch: z.infer
         if (overlapsAny(rect, others.map(toRect))) throw new ApiError(409, "TABLE_OVERLAP");
       }
 
-      // Phase 5: switching a table off must be refused while it has an open order.
+      // A table with an open order cannot be switched off: the guests are sitting there.
+      if (patch.isActive === false && current.isActive && (await tx.orderTable.count({ where: { tableId: id, releasedAt: null } })) > 0) {
+        throw new ApiError(409, "TABLE_IN_USE");
+      }
+
       const row = await tx.diningTable.update({ where: { id }, data: patch, select: TABLE });
       await writeAudit(tx, {
         actorId: actor.id,
@@ -214,7 +244,7 @@ export async function updateTable(actor: AuthedStaff, id: string, patch: z.infer
         entityId: id,
         details: { fields: Object.keys(patch) },
       });
-      return withStatus(row);
+      return withStatus(row, await loadOccupancy(tx));
     }),
   );
 }

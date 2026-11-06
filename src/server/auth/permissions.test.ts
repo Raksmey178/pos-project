@@ -48,4 +48,13 @@ describe("role permissions", () => {
     expect(hasPermission("MANAGER", "tables:manage")).toBe(true);
     expect(hasPermission("ADMIN", "tables:manage")).toBe(true);
   });
+
+  it("Waiter, Cashier, Manager and Admin can take orders; the Kitchen cannot", () => {
+    for (const role of ["WAITER", "CASHIER", "MANAGER", "ADMIN"] as const) {
+      expect(hasPermission(role, "orders:view")).toBe(true);
+      expect(hasPermission(role, "orders:edit")).toBe(true);
+    }
+    expect(hasPermission("KITCHEN", "orders:view")).toBe(false);
+    expect(hasPermission("KITCHEN", "orders:edit")).toBe(false);
+  });
 });

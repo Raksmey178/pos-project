@@ -20,6 +20,14 @@ export default async function Home() {
       </div>
 
       <div className="flex flex-wrap items-center justify-center gap-3">
+        {hasPermission(staff.role, "orders:view") && (
+          <Link
+            href="/orders"
+            className="flex h-14 items-center rounded-2xl bg-zinc-900 px-6 text-lg font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
+          >
+            {t("orders")}
+          </Link>
+        )}
         <Link
           href="/menu"
           className="flex h-14 items-center rounded-2xl bg-zinc-900 px-6 text-lg font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
